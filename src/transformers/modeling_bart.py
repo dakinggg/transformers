@@ -364,7 +364,6 @@ class DecoderLayer(nn.Module):
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
         # Self Attention
-
         x, self_attn_weights = self.self_attn(
             query=x,
             key=x,
@@ -398,6 +397,7 @@ class DecoderLayer(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.final_layer_norm(x)
+        # import ipdb; ipdb.set_trace()
         x = self.activation_fn(self.fc1(x))
         x = F.dropout(x, p=self.activation_dropout, training=self.training)
         x = self.fc2(x)
@@ -508,7 +508,6 @@ class BartDecoder(nn.Module):
                 continue
 
             layer_state = decoder_cached_states[idx] if decoder_cached_states is not None else None
-
             x, layer_self_attn, layer_past = decoder_layer(
                 x,
                 encoder_hidden_states,
@@ -816,6 +815,7 @@ class BartModel(PretrainedBartModel):
         decoder_attention_mask=None,
         decoder_cached_states=None,
         use_cache=False,
+        source_input_ids=None
     ):
 
         # make masks if user doesn't supply
@@ -848,6 +848,7 @@ class BartModel(PretrainedBartModel):
         decoder_outputs: Tuple = _filter_out_falsey_values(decoder_outputs)
         assert isinstance(decoder_outputs[0], torch.Tensor)
         encoder_outputs: Tuple = _filter_out_falsey_values(encoder_outputs)
+
         return decoder_outputs + encoder_outputs
 
     def get_input_embeddings(self):
@@ -901,6 +902,9 @@ class BartForConditionalGeneration(PretrainedBartModel):
         decoder_cached_states=None,
         lm_labels=None,
         use_cache=False,
+        tokenizer=None,
+        input_source_index_mask=None,
+        extra_loss=False,
         **unused
     ):
         r"""
@@ -944,6 +948,14 @@ class BartForConditionalGeneration(PretrainedBartModel):
             tokenizer.decode(predictions).split()
             # ['good', 'great', 'all', 'really', 'very']
         """
+        if extra_loss:
+            if input_source_index_mask is None:
+                source_index_mask = torch.zeros((input_ids.shape[0], 50265), dtype=torch.bool, device=input_ids.device)
+                for batch_idx in range(input_ids.shape[0]):
+                    source_index_mask[batch_idx, input_ids[batch_idx]] = 1
+            else:
+                source_index_mask = input_source_index_mask
+
         outputs = self.model(
             input_ids,
             attention_mask=attention_mask,
@@ -953,13 +965,21 @@ class BartForConditionalGeneration(PretrainedBartModel):
             decoder_cached_states=decoder_cached_states,
             use_cache=use_cache,
         )
+
         lm_logits = F.linear(outputs[0], self.model.shared.weight, bias=self.final_logits_bias)
+
         outputs = (lm_logits,) + outputs[1:]  # Add cache, hidden states and attention if they are here
         if lm_labels is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-100, reduction='mean')
             # TODO(SS): do we need to ignore pad tokens in lm_labels?
             masked_lm_loss = loss_fct(lm_logits.view(-1, self.config.vocab_size), lm_labels.view(-1))
-            outputs = (masked_lm_loss,) + outputs
+            if extra_loss:
+                labels_copy = torch.LongTensor([[element if source_index_mask[i][element] else -100 for element in example] for i, example in enumerate(lm_labels.detach().clone())]).to(lm_logits.device)
+                masked_lm_loss_extractive = loss_fct(lm_logits.view(-1, self.config.vocab_size), labels_copy.view(-1))
+                total_loss = (masked_lm_loss + masked_lm_loss_extractive)/2
+            else:
+                total_loss = masked_lm_loss
+            outputs = (total_loss,) + outputs
 
         return outputs
 
