@@ -1764,7 +1764,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     else:
                         # add next predicted token if it is not eos_token
                         next_sent_beam.append(
-                            (beam_token_score, token_id, effective_beam_id)
+                            (beam_token_score, token_id, effective_beam_id, next_entropy, next_distro)
                         )
 
                     # the beam for next step is full
