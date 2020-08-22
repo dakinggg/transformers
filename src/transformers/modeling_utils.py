@@ -1570,6 +1570,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         # Store entropies and next token distributions
         entropies = torch.zeros(input_ids.shape)
         next_distribution = torch.zeros((num_beams, 10, 1))
+        attribution = np.zeros((num_beams, 5, 2, 1), dtype="O")
 
         while cur_len < max_length:
             # import ipdb; ipdb.set_trace()
@@ -1581,11 +1582,21 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 tokenizer=tokenizer,
                 **model_specific_kwargs,
             )
-            outputs = self(
-                input_source_index_mask=source_index_mask,
-                tokenizer=tokenizer,
-                **model_inputs,
-            )  # (batch_size * num_beams, cur_len, vocab_size)
+
+            if self.model.output_attentions:
+                outputs, cross_attn_output = self(
+                    input_source_index_mask=source_index_mask,
+                    tokenizer=tokenizer,
+                    **model_inputs,
+                    original_input_ids=original_input_ids,
+                )  # (batch_size * num_beams, cur_len, vocab_size)
+            else:
+                outputs = self(
+                    input_source_index_mask=source_index_mask,
+                    tokenizer=tokenizer,
+                    **model_inputs,
+                    original_input_ids=original_input_ids,
+                )  # (batch_size * num_beams, cur_len, vocab_size)
             next_token_logits = outputs[0][
                 :, -1, :
             ]  # (batch_size * num_beams, vocab_size)
@@ -1613,6 +1624,13 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     next_token_logits, cur_len=cur_len, max_length=max_length
                 )
 
+            # Compute next token entropy and top k
+            smed = F.softmax(next_token_logits, dim=-1)
+            next_entropies = [
+                entropy(smed[i, :].detach().cpu()) for i in range(smed.shape[0])
+            ]
+            next_top_k = torch.topk(smed, k=10)[1].cpu()
+
             next_token_logits[:, source_index_mask] = (
                 next_token_logits[:, source_index_mask] + extractive_adjustment
             )
@@ -1620,13 +1638,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             scores = F.log_softmax(
                 next_token_logits, dim=-1
             )  # (batch_size * num_beams, vocab_size)
-
-            # Compute next token entropy and top k
-            smed = F.softmax(next_token_logits, dim=-1)
-            next_entropies = [
-                entropy(smed[i, :].detach().cpu()) for i in range(smed.shape[0])
-            ]
-            next_top_k = torch.topk(smed, k=10)[1].cpu()
 
             # set eos token prob to zero if min_length is not reached
             if eos_token_id is not None and cur_len < min_length:
@@ -1745,6 +1756,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     # get next token entropy and top k
                     next_entropy = next_entropies[beam_id]
                     next_distro = next_top_k[beam_id]
+                    if self.model.output_attentions:
+                        next_attribution = cross_attn_output[beam_id]
 
                     effective_beam_id = batch_idx * num_beams + beam_id
                     # add to generated hypotheses if end of sentence or last iteration
@@ -1755,17 +1768,45 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                         )
                         if is_beam_token_worse_than_top_num_beams:
                             continue
-                        generated_hyps[batch_idx].add(
-                            input_ids[effective_beam_id].clone(),
-                            beam_token_score.item(),
-                            entropies[beam_id, :],
-                            next_distribution[beam_id, :],
-                        )
+
+                        if self.model.output_attentions:
+                            generated_hyps[batch_idx].add(
+                                input_ids[effective_beam_id].clone(),
+                                beam_token_score.item(),
+                                entropies[beam_id, :],
+                                next_distribution[beam_id, :],
+                                attribution[beam_id],
+                            )
+                        else:
+                            generated_hyps[batch_idx].add(
+                                input_ids[effective_beam_id].clone(),
+                                beam_token_score.item(),
+                                entropies[beam_id, :],
+                                next_distribution[beam_id, :],
+                            )
                     else:
                         # add next predicted token if it is not eos_token
-                        next_sent_beam.append(
-                            (beam_token_score, token_id, effective_beam_id, next_entropy, next_distro)
-                        )
+                        if self.model.output_attentions:
+                            next_sent_beam.append(
+                                (
+                                    beam_token_score,
+                                    token_id,
+                                    effective_beam_id,
+                                    next_entropy,
+                                    next_distro,
+                                    next_attribution,
+                                )
+                            )
+                        else:
+                            next_sent_beam.append(
+                                (
+                                    beam_token_score,
+                                    token_id,
+                                    effective_beam_id,
+                                    next_entropy,
+                                    next_distro,
+                                )
+                            )
 
                     # the beam for next step is full
                     if len(next_sent_beam) == num_beams:
@@ -1804,6 +1845,18 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             entropies = torch.cat(
                 [entropies, beam_entropies.unsqueeze(1).float()], dim=-1
             )
+
+            if self.model.output_attentions:
+                beam_attribution = np.array(
+                    [
+                        [(score.item(), string) for score, string in x[5]]
+                        for x in next_batch_beam
+                    ]
+                )
+                attribution = attribution[beam_idx.cpu(), :]
+                attribution = np.concatenate(
+                    [attribution, np.expand_dims(beam_attribution, axis=3)], axis=-1
+                )
 
             # re-order batch and update current length
             input_ids = input_ids[beam_idx, :]
@@ -1865,6 +1918,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
         entropies_to_return = []
         distros_to_return = []
+        attribution_to_return = []
         # retrieve best hypotheses
         for i, hypotheses in enumerate(generated_hyps):
             sorted_hyps = sorted(hypotheses.beams, key=lambda x: x[0])
@@ -1877,6 +1931,21 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 best_scores.append(best_full[0])
                 entropies_to_return.append(best_full[2])
                 distros_to_return.append(best_full[3])
+
+                if self.model.output_attentions:
+                    attribution_out = [
+                        [
+                            (
+                                float(best_full[4][top_index, 0, sequence_index]),
+                                best_full[4][top_index, 1, sequence_index],
+                            )
+                            for top_index in range(
+                                best_full[4][:, :, sequence_index].shape[0]
+                            )
+                        ]
+                        for sequence_index in range(best_full[4].shape[2])
+                    ]
+                    attribution_to_return.append(attribution_out)
 
         # shorter batches are filled with pad_token
         if sent_lengths.min().item() != sent_lengths.max().item():
@@ -1907,7 +1976,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         ]
 
         if not return_score:
-            return decoded, entropies_to_return, distribution_output
+            return (
+                decoded,
+                entropies_to_return,
+                distribution_output,
+                attribution_to_return,
+            )
         else:
             return (decoded, best_scores[0])
 
@@ -2047,16 +2121,16 @@ class BeamHypotheses(object):
         """
         return len(self.beams)
 
-    def add(self, hyp, sum_logprobs, entropies, distribution):
+    def add(self, hyp, sum_logprobs, entropies, distribution, attribution=[]):
         """
         Add a new hypothesis to the list.
         """
         score = sum_logprobs / len(hyp) ** self.length_penalty
         if len(self) < self.num_beams or score > self.worst_score:
-            self.beams.append((score, hyp, entropies, distribution))
+            self.beams.append((score, hyp, entropies, distribution, attribution))
             if len(self) > self.num_beams:
                 sorted_scores = sorted(
-                    [(s, idx) for idx, (s, _, _, _) in enumerate(self.beams)]
+                    [(s, idx) for idx, (s, _, _, _, _) in enumerate(self.beams)]
                 )
                 del self.beams[sorted_scores[0][1]]
                 self.worst_score = sorted_scores[1][0]
