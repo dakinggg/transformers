@@ -1581,7 +1581,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         use_cache_dead_end = True
         num_resets = 0
         tmp_num_resets = 0
-        previously_used_attributions = [set()] * num_beams
 
         while cur_len < max_length:
             # import ipdb; ipdb.set_trace()
@@ -1737,13 +1736,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 )
                 next_scores = next_scores.cpu()
                 filter_scores = []
-                next_used_attributions = []
                 participating_beams = set()
                 for i in range(2 * num_beams + len(previous_dead_end_tokens)):
                     beam_index = next_tokens[0][i] // vocab_size
                     participating_beams.add(beam_index)
 
-                    (filter_score, filter_used_attribution,) = beam_search_token_scorer(
+                    filter_score = beam_search_token_scorer(
                         tokenizer.decode(next_tokens[0][i].item() % vocab_size),
                         tokenizer.decode(input_ids[beam_index][-1].item() % vocab_size)
                         if input_ids[beam_index].shape[0] > 1
@@ -1765,11 +1763,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                         ),
                         unmasker,
                         previous_dead_end_tokens,
-                        set(),
                     )
                     # filter_score = 1
                     filter_scores.append(filter_score)
-                    next_used_attributions.append(filter_used_attribution)
 
                 import ipdb
 
@@ -1790,7 +1786,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     # next_distribution = previous_next_distribution
                     # entropies = previous_entropies
                     # attribution = previous_attribution
-                    # previously_used_attributions = previous_previously_used_attributions
                     cur_len -= 1
                     past = previous_past
                     tmp_num_resets += 1
@@ -1950,9 +1945,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # save previous state
             previous_next_distribution = copy.deepcopy(next_distribution)
             previous_entropies = copy.deepcopy(entropies)
-            previous_previously_used_attributions = copy.deepcopy(
-                previously_used_attributions
-            )
             previous_attribution = copy.deepcopy(attribution)
             previous_input_ids = copy.deepcopy(input_ids)
 
