@@ -403,9 +403,7 @@ class DecoderLayer(nn.Module):
         assert self.encoder_attn.cache_key != self.self_attn.cache_key
         if self.normalize_before:
             x = self.encoder_attn_layer_norm(x)
-        # import ipdb
 
-        # ipdb.set_trace()
         x, cross_attention_weights = self.encoder_attn(
             query=x,
             key=encoder_hidden_states,
@@ -423,7 +421,7 @@ class DecoderLayer(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.final_layer_norm(x)
-        # import ipdb; ipdb.set_trace()
+
         x = self.activation_fn(self.fc1(x))
         x = F.dropout(x, p=self.activation_dropout, training=self.training)
         x = self.fc2(x)
@@ -531,6 +529,7 @@ class BartDecoder(nn.Module):
         all_self_attns = ()
         all_cross_attns = ()
         next_decoder_cache = []
+
         for idx, decoder_layer in enumerate(self.layers):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             if self.output_hidden_states:
@@ -919,13 +918,12 @@ class BartModel(PretrainedBartModel):
             decoder_cached_states=decoder_cached_states,
             use_cache=use_cache,
         )
+
         # Attention and hidden_states will be [] or None if they aren't needed
         decoder_outputs: Tuple = _filter_out_falsey_values(decoder_outputs)
         assert isinstance(decoder_outputs[0], torch.Tensor)
         encoder_outputs: Tuple = _filter_out_falsey_values(encoder_outputs)
-        # import ipdb
 
-        # ipdb.set_trace()
         return decoder_outputs + encoder_outputs
 
     def get_input_embeddings(self):
@@ -1036,7 +1034,7 @@ class BartForConditionalGeneration(PretrainedBartModel):
         if extra_loss:
             if input_source_index_mask is None:
                 source_index_mask = torch.zeros(
-                    (input_ids.shape[0], 50265),
+                    (input_ids.shape[0], self.model.shared.num_embeddings),
                     dtype=torch.bool,
                     device=input_ids.device,
                 )
@@ -1054,9 +1052,6 @@ class BartForConditionalGeneration(PretrainedBartModel):
             decoder_cached_states=decoder_cached_states,
             use_cache=use_cache,
         )
-        # import ipdb
-
-        # ipdb.set_trace()
 
         lm_logits = F.linear(
             outputs[0], self.model.shared.weight, bias=self.final_logits_bias
@@ -1084,7 +1079,7 @@ class BartForConditionalGeneration(PretrainedBartModel):
                 masked_lm_loss_extractive = loss_fct(
                     lm_logits.view(-1, self.config.vocab_size), labels_copy.view(-1)
                 )
-                total_loss = (masked_lm_loss + masked_lm_loss_extractive) / 2
+                total_loss = masked_lm_loss_extractive
             else:
                 total_loss = masked_lm_loss
             outputs = (total_loss,) + outputs
