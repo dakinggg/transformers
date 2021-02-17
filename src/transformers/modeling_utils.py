@@ -1585,6 +1585,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
         while cur_len < max_length:
             # import ipdb; ipdb.set_trace()
+            previous_past = copy.deepcopy(past)
             model_inputs = self.prepare_inputs_for_generation(
                 input_ids,
                 past=past if use_cache_dead_end else None,
@@ -1618,7 +1619,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
             # if model has past, then set the past variable to speed up decoding
             if self._use_cache(outputs, use_cache):
-                previous_past = past
                 past = outputs[1]
 
             # repetition penalty (from CTRL paper https://arxiv.org/abs/1909.05858)
