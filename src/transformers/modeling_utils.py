@@ -18,6 +18,7 @@ import inspect
 import logging
 import os
 import numpy as np
+import copy
 from scipy.stats import entropy
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -38,9 +39,9 @@ from .file_utils import (
     is_remote_url,
 )
 
+from topic_description.summarization.heuristic import beam_search_token_scorer
 
 logger = logging.getLogger(__name__)
-
 
 try:
     from torch.nn import Identity
@@ -928,6 +929,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         tokenizer=None,
         extractive_adjustment: Optional[float] = 0.0,
         return_score: Optional[bool] = False,
+        unmasker=None,
         **model_specific_kwargs,
     ) -> torch.LongTensor:
         r""" Generates sequences for models with a LM head. The method currently supports greedy decoding, beam-search decoding, sampling with temperature, sampling with top-k or nucleus sampling.
@@ -1322,6 +1324,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 tokenizer=tokenizer,
                 extractive_adjustment=extractive_adjustment,
                 return_score=return_score,
+                unmasker=unmasker,
             )
         else:
             output = self._generate_no_beam_search(
@@ -1534,9 +1537,11 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         tokenizer,
         extractive_adjustment,
         return_score,
+        unmasker,
     ):
         """ Generate sequences for each example with beam search.
         """
+        use_cache = True
         assert input_ids.shape[1] == 1, "Currently broken batch generation"
 
         # Create mask for extractive word pieces (1 = abstractive, 0 = extractive)
@@ -1572,13 +1577,19 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         next_distribution = torch.zeros((num_beams, 10, 1))
         attribution = np.zeros((num_beams, 5, 2, 1), dtype="O")
 
+        previous_dead_end_tokens = set()
+        use_cache_dead_end = True
+        num_resets = 0
+        tmp_num_resets = 0
+        previously_used_attributions = [set()] * num_beams
+
         while cur_len < max_length:
             # import ipdb; ipdb.set_trace()
             model_inputs = self.prepare_inputs_for_generation(
                 input_ids,
-                past=past,
+                past=past if use_cache_dead_end else None,
                 attention_mask=attention_mask,
-                use_cache=use_cache,
+                use_cache=use_cache if use_cache_dead_end else False,
                 tokenizer=tokenizer,
                 **model_specific_kwargs,
             )
@@ -1597,12 +1608,17 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     **model_inputs,
                     original_input_ids=original_input_ids,
                 )  # (batch_size * num_beams, cur_len, vocab_size)
+
+            import ipdb
+
+            ipdb.set_trace()
             next_token_logits = outputs[0][
                 :, -1, :
             ]  # (batch_size * num_beams, vocab_size)
 
             # if model has past, then set the past variable to speed up decoding
             if self._use_cache(outputs, use_cache):
+                previous_past = past
                 past = outputs[1]
 
             # repetition penalty (from CTRL paper https://arxiv.org/abs/1909.05858)
@@ -1709,13 +1725,100 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 next_scores = next_scores.view(
                     batch_size, num_beams * vocab_size
                 )  # (batch_size, num_beams * vocab_size)
+                import ipdb
 
+                ipdb.set_trace()
                 next_scores, next_tokens = torch.topk(
-                    next_scores, 2 * num_beams, dim=1, largest=True, sorted=True
+                    next_scores,
+                    2 * num_beams + len(previous_dead_end_tokens),
+                    dim=1,
+                    largest=True,
+                    sorted=True,
                 )
+                next_scores = next_scores.cpu()
+                filter_scores = []
+                next_used_attributions = []
+                participating_beams = set()
+                for i in range(2 * num_beams + len(previous_dead_end_tokens)):
+                    beam_index = next_tokens[0][i] // vocab_size
+                    participating_beams.add(beam_index)
+
+                    (filter_score, filter_used_attribution,) = beam_search_token_scorer(
+                        tokenizer.decode(next_tokens[0][i].item() % vocab_size),
+                        tokenizer.decode(input_ids[beam_index][-1].item() % vocab_size)
+                        if input_ids[beam_index].shape[0] > 1
+                        else "",
+                        tokenizer.decode(input_ids[beam_index][-2].item() % vocab_size)
+                        if input_ids[beam_index].shape[0] > 2
+                        else "",
+                        next_entropies[beam_index],
+                        entropies[beam_index, -1]
+                        if entropies[beam_index].shape[0] > 1
+                        else -1,
+                        entropies[beam_index, -2]
+                        if entropies[beam_index].shape[0] > 2
+                        else -1,
+                        [tokenizer.decode(i.item()) for i in next_top_k[beam_index]],
+                        cross_attn_output[beam_index],
+                        "".join(
+                            [tokenizer.decode(i.item()) for i in input_ids[beam_index]]
+                        ),
+                        unmasker,
+                        previous_dead_end_tokens,
+                        set(),
+                    )
+                    # filter_score = 1
+                    filter_scores.append(filter_score)
+                    next_used_attributions.append(filter_used_attribution)
+
+                import ipdb
+
+                ipdb.set_trace()
+
+                if all(f == 0 for f in filter_scores):
+                    print("---------------RESET---------------")
+                    previous_dead_end_tokens = {
+                        tokenizer.decode(input_ids[beam_index][-1].item() % vocab_size)
+                        for beam_index in participating_beams
+                    }
+                    input_ids = input_ids[:, :-1]
+                    next_distribution = next_distribution[:, :, :-1]
+                    entropies = entropies[:, :-1]
+                    attribution = attribution[:, :, :, :-1]
+
+                    # input_ids = previous_input_ids
+                    # next_distribution = previous_next_distribution
+                    # entropies = previous_entropies
+                    # attribution = previous_attribution
+                    # previously_used_attributions = previous_previously_used_attributions
+                    cur_len -= 1
+                    past = previous_past
+                    tmp_num_resets += 1
+                    import ipdb
+
+                    ipdb.set_trace()
+                    continue
+                else:
+                    previous_dead_end_tokens = set()
+                    use_cache_dead_end = True
+
+                next_scores -= (1 - np.array(filter_scores)) * 10000
+                print(next_scores)
+                next_scores, next_scores_indices = next_scores.sort(
+                    dim=1, descending=True
+                )
+                next_tokens[0] = next_tokens[0, next_scores_indices[0]]
+                next_used_attributions_sorted = []
+                for index in next_scores_indices[0]:
+                    next_used_attributions_sorted.append(next_used_attributions[index])
+
+                next_tokens = next_tokens[:, : 2 * num_beams]
+                next_scores = next_scores[:, : 2 * num_beams]
+                next_used_attributions = next_used_attributions[: 2 * num_beams]
                 # import ipdb
 
                 # ipdb.set_trace()
+                # another place batching is broken
 
             assert (
                 next_scores.size() == next_tokens.size() == (batch_size, 2 * num_beams)
@@ -1746,8 +1849,15 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 next_sent_beam = []
 
                 # next tokens for this sentence
-                for beam_token_rank, (beam_token_id, beam_token_score) in enumerate(
-                    zip(next_tokens[batch_idx], next_scores[batch_idx])
+                for (
+                    beam_token_rank,
+                    (beam_token_id, beam_token_score, beam_used_attributions),
+                ) in enumerate(
+                    zip(
+                        next_tokens[batch_idx],
+                        next_scores[batch_idx],
+                        next_used_attributions_sorted,
+                    )
                 ):
                     # get beam and token IDs
                     beam_id = beam_token_id // vocab_size
@@ -1770,14 +1880,19 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                             continue
 
                         if self.model.output_attentions:
+                            print(":::::Adding:::::", beam_token_score)
+                            num_resets += tmp_num_resets
+                            tmp_num_resets = 0
                             generated_hyps[batch_idx].add(
                                 input_ids[effective_beam_id].clone(),
                                 beam_token_score.item(),
                                 entropies[beam_id, :],
                                 next_distribution[beam_id, :],
                                 attribution[beam_id],
+                                num_resets,
                             )
                         else:
+                            # i think this code path is broken
                             generated_hyps[batch_idx].add(
                                 input_ids[effective_beam_id].clone(),
                                 beam_token_score.item(),
@@ -1795,9 +1910,11 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                                     next_entropy,
                                     next_distro,
                                     next_attribution,
+                                    beam_used_attributions,
                                 )
                             )
                         else:
+                            # i think this code path is broken
                             next_sent_beam.append(
                                 (
                                     beam_token_score,
@@ -1826,6 +1943,19 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             if all(done):
                 break
 
+            # import ipdb
+
+            # ipdb.set_trace()
+
+            # save previous state
+            previous_next_distribution = copy.deepcopy(next_distribution)
+            previous_entropies = copy.deepcopy(entropies)
+            previous_previously_used_attributions = copy.deepcopy(
+                previously_used_attributions
+            )
+            previous_attribution = copy.deepcopy(attribution)
+            previous_input_ids = copy.deepcopy(input_ids)
+
             # sanity check / prepare next batch
             assert len(next_batch_beam) == batch_size * num_beams
             beam_scores = beam_scores.new([x[0] for x in next_batch_beam])
@@ -1846,6 +1976,24 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 [entropies, beam_entropies.unsqueeze(1).float()], dim=-1
             )
 
+            # import ipdb
+
+            # ipdb.set_trace()
+            previously_used_attributions_tmp = [set()] * num_beams
+            for new_idx, old_idx in enumerate(beam_idx):
+                previously_used_attributions_tmp[
+                    new_idx
+                ] = previously_used_attributions[old_idx.item()].union(
+                    next_batch_beam[new_idx][6]
+                )
+            previously_used_attributions = copy.deepcopy(
+                previously_used_attributions_tmp
+            )
+
+            # import ipdb
+
+            # ipdb.set_trace()
+
             if self.model.output_attentions:
                 beam_attribution = np.array(
                     [
@@ -1862,6 +2010,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             input_ids = input_ids[beam_idx, :]
             input_ids = torch.cat([input_ids, beam_tokens.unsqueeze(1)], dim=-1)
             cur_len = cur_len + 1
+
+            for beam in range(input_ids.shape[0]):
+                print(f"Beam {beam}:", tokenizer.decode(input_ids[beam]))
 
             # re-order internal states
             if past is not None:
@@ -1919,6 +2070,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         entropies_to_return = []
         distros_to_return = []
         attribution_to_return = []
+        num_resets_to_return = []
         # retrieve best hypotheses
         for i, hypotheses in enumerate(generated_hyps):
             sorted_hyps = sorted(hypotheses.beams, key=lambda x: x[0])
@@ -1931,6 +2083,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 best_scores.append(best_full[0])
                 entropies_to_return.append(best_full[2])
                 distros_to_return.append(best_full[3])
+                num_resets_to_return.append(best_full[5])
 
                 if self.model.output_attentions:
                     attribution_out = [
@@ -1981,6 +2134,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 entropies_to_return,
                 distribution_output,
                 attribution_to_return,
+                best_scores[0],
+                num_resets_to_return,
             )
         else:
             return (decoded, best_scores[0])
@@ -2121,16 +2276,23 @@ class BeamHypotheses(object):
         """
         return len(self.beams)
 
-    def add(self, hyp, sum_logprobs, entropies, distribution, attribution=[]):
+    def add(
+        self, hyp, sum_logprobs, entropies, distribution, attribution=[], num_resets=0
+    ):
         """
         Add a new hypothesis to the list.
         """
-        score = sum_logprobs / len(hyp) ** self.length_penalty
+        log_probs_score = sum_logprobs / len(hyp) ** self.length_penalty
+        hallucinated_score = 0
+        # need to calculate an additional score here and combine it with the log probs somehow
+        score = log_probs_score
         if len(self) < self.num_beams or score > self.worst_score:
-            self.beams.append((score, hyp, entropies, distribution, attribution))
+            self.beams.append(
+                (score, hyp, entropies, distribution, attribution, num_resets)
+            )
             if len(self) > self.num_beams:
                 sorted_scores = sorted(
-                    [(s, idx) for idx, (s, _, _, _, _) in enumerate(self.beams)]
+                    [(s, idx) for idx, (s, _, _, _, _, _) in enumerate(self.beams)]
                 )
                 del self.beams[sorted_scores[0][1]]
                 self.worst_score = sorted_scores[1][0]
