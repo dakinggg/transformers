@@ -67,11 +67,7 @@ class ModuleUtilsMixin:
         """
         Get number of (optionally, trainable) parameters in the module.
         """
-        params = (
-            filter(lambda x: x.requires_grad, self.parameters())
-            if only_trainable
-            else self.parameters()
-        )
+        params = filter(lambda x: x.requires_grad, self.parameters()) if only_trainable else self.parameters()
         return sum(p.numel() for p in params)
 
     @staticmethod
@@ -79,9 +75,7 @@ class ModuleUtilsMixin:
         try:
             import psutil
         except (ImportError):
-            raise ImportError(
-                "You need to install psutil (pip install psutil) to use memory tracing."
-            )
+            raise ImportError("You need to install psutil (pip install psutil) to use memory tracing.")
 
         process = psutil.Process(os.getpid())
         mem = process.memory_info()
@@ -93,17 +87,13 @@ class ModuleUtilsMixin:
         try:
             import psutil
         except (ImportError):
-            raise ImportError(
-                "You need to install psutil (pip install psutil) to use memory tracing."
-            )
+            raise ImportError("You need to install psutil (pip install psutil) to use memory tracing.")
 
         process = psutil.Process(os.getpid())
         mem = process.memory_info()
         module.mem_rss_post_forward = mem.rss
         mem_rss_diff = module.mem_rss_post_forward - module.mem_rss_pre_forward
-        module.mem_rss_diff = mem_rss_diff + (
-            module.mem_rss_diff if hasattr(module, "mem_rss_diff") else 0
-        )
+        module.mem_rss_diff = mem_rss_diff + (module.mem_rss_diff if hasattr(module, "mem_rss_diff") else 0)
         return None
 
     def add_memory_hooks(self):
@@ -129,9 +119,7 @@ class ModuleUtilsMixin:
             # For nn.DataParallel compatibility in PyTorch 1.5
 
             def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
-                tuples = [
-                    (k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)
-                ]
+                tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
                 return tuples
 
             gen = self._named_members(get_members_fn=find_tensor_attributes)
@@ -146,9 +134,7 @@ class ModuleUtilsMixin:
             # For nn.DataParallel compatibility in PyTorch 1.5
 
             def find_tensor_attributes(module: nn.Module) -> List[Tuple[str, Tensor]]:
-                tuples = [
-                    (k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)
-                ]
+                tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
                 return tuples
 
             gen = self._named_members(get_members_fn=find_tensor_attributes)
@@ -166,18 +152,12 @@ class ModuleUtilsMixin:
         # /transformer/transformer_layers.py#L270
         # encoder_extended_attention_mask = (encoder_extended_attention_mask ==
         # encoder_extended_attention_mask.transpose(-1, -2))
-        encoder_extended_attention_mask = encoder_extended_attention_mask.to(
-            dtype=self.dtype
-        )  # fp16 compatibility
+        encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
 
         if self.dtype == torch.float16:
-            encoder_extended_attention_mask = (
-                1.0 - encoder_extended_attention_mask
-            ) * -1e4
+            encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * -1e4
         elif self.dtype == torch.float32:
-            encoder_extended_attention_mask = (
-                1.0 - encoder_extended_attention_mask
-            ) * -1e9
+            encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * -1e9
         else:
             raise ValueError(
                 "{} not recognized. `dtype` should be set to either `torch.float32` or `torch.float16`".format(
@@ -187,9 +167,7 @@ class ModuleUtilsMixin:
 
         return encoder_extended_attention_mask
 
-    def get_extended_attention_mask(
-        self, attention_mask: Tensor, input_shape: Tuple, device: device
-    ) -> Tensor:
+    def get_extended_attention_mask(self, attention_mask: Tensor, input_shape: Tuple, device: device) -> Tensor:
         """Makes broadcastable attention mask and causal mask so that future and maked tokens are ignored.
 
         Arguments:
@@ -211,15 +189,10 @@ class ModuleUtilsMixin:
             if self.config.is_decoder:
                 batch_size, seq_length = input_shape
                 seq_ids = torch.arange(seq_length, device=device)
-                causal_mask = (
-                    seq_ids[None, None, :].repeat(batch_size, seq_length, 1)
-                    <= seq_ids[None, :, None]
-                )
+                causal_mask = seq_ids[None, None, :].repeat(batch_size, seq_length, 1) <= seq_ids[None, :, None]
                 # causal and attention masks must have same type with pytorch version < 1.3
                 causal_mask = causal_mask.to(attention_mask.dtype)
-                extended_attention_mask = (
-                    causal_mask[:, None, :, :] * attention_mask[:, None, None, :]
-                )
+                extended_attention_mask = causal_mask[:, None, :, :] * attention_mask[:, None, None, :]
             else:
                 extended_attention_mask = attention_mask[:, None, None, :]
         else:
@@ -234,18 +207,11 @@ class ModuleUtilsMixin:
         # positions we want to attend and -10000.0 for masked positions.
         # Since we are adding it to the raw scores before the softmax, this is
         # effectively the same as removing these entirely.
-        extended_attention_mask = extended_attention_mask.to(
-            dtype=self.dtype
-        )  # fp16 compatibility
+        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
         return extended_attention_mask
 
-    def get_head_mask(
-        self,
-        head_mask: Tensor,
-        num_hidden_layers: int,
-        is_attention_chunked: bool = False,
-    ) -> Tensor:
+    def get_head_mask(self, head_mask: Tensor, num_hidden_layers: int, is_attention_chunked: bool = False,) -> Tensor:
         """
         # Prepare head mask if needed
         # 1.0 in head_mask indicate we keep the head
@@ -272,13 +238,9 @@ class ModuleUtilsMixin:
             head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
             head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
         elif head_mask.dim() == 2:
-            head_mask = (
-                head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
-            )  # We can specify head_mask for each layer
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
         assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
-        head_mask = head_mask.to(
-            dtype=self.dtype
-        )  # switch to fload if need + fp16 compatibility
+        head_mask = head_mask.to(dtype=self.dtype)  # switch to fload if need + fp16 compatibility
         return head_mask
 
 
@@ -388,16 +350,11 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         if getattr(output_embeddings, "bias", None) is not None:
             output_embeddings.bias.data = torch.nn.functional.pad(
                 output_embeddings.bias.data,
-                (
-                    0,
-                    output_embeddings.weight.shape[0] - output_embeddings.bias.shape[0],
-                ),
+                (0, output_embeddings.weight.shape[0] - output_embeddings.bias.shape[0],),
                 "constant",
                 0,
             )
-        if hasattr(output_embeddings, "out_features") and hasattr(
-            input_embeddings, "num_embeddings"
-        ):
+        if hasattr(output_embeddings, "out_features") and hasattr(input_embeddings, "num_embeddings"):
             output_embeddings.out_features = input_embeddings.num_embeddings
 
     def resize_token_embeddings(self, new_num_tokens: Optional[int] = None):
@@ -413,9 +370,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         Return: ``torch.nn.Embeddings``
             Pointer to the input tokens Embeddings Module of the model
         """
-        base_model = getattr(
-            self, self.base_model_prefix, self
-        )  # get the base model if needed
+        base_model = getattr(self, self.base_model_prefix, self)  # get the base model if needed
         model_embeds = base_model._resize_token_embeddings(new_num_tokens)
         if new_num_tokens is None:
             return model_embeds
@@ -469,9 +424,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
         # Copy token embeddings from the previous weights
         num_tokens_to_copy = min(old_num_tokens, new_num_tokens)
-        new_embeddings.weight.data[:num_tokens_to_copy, :] = old_embeddings.weight.data[
-            :num_tokens_to_copy, :
-        ]
+        new_embeddings.weight.data[:num_tokens_to_copy, :] = old_embeddings.weight.data[:num_tokens_to_copy, :]
 
         return new_embeddings
 
@@ -498,9 +451,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         # save new sets of pruned heads as union of previously stored pruned heads and newly pruned heads
         for layer, heads in heads_to_prune.items():
             union_heads = set(self.config.pruned_heads.get(layer, [])) | set(heads)
-            self.config.pruned_heads[layer] = list(
-                union_heads
-            )  # Unfortunately we have to store it as list for JSON
+            self.config.pruned_heads[layer] = list(union_heads)  # Unfortunately we have to store it as list for JSON
 
         self.base_model._prune_heads(heads_to_prune)
 
@@ -622,9 +573,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
         # Load config if we don't provide a configuration
         if not isinstance(config, PretrainedConfig):
-            config_path = (
-                config if config is not None else pretrained_model_name_or_path
-            )
+            config_path = config if config is not None else pretrained_model_name_or_path
             config, model_kwargs = cls.config_class.from_pretrained(
                 config_path,
                 *model_args,
@@ -642,47 +591,25 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         # Load model
         if pretrained_model_name_or_path is not None:
             if pretrained_model_name_or_path in cls.pretrained_model_archive_map:
-                archive_file = cls.pretrained_model_archive_map[
-                    pretrained_model_name_or_path
-                ]
+                archive_file = cls.pretrained_model_archive_map[pretrained_model_name_or_path]
             elif os.path.isdir(pretrained_model_name_or_path):
-                if from_tf and os.path.isfile(
-                    os.path.join(
-                        pretrained_model_name_or_path, TF_WEIGHTS_NAME + ".index"
-                    )
-                ):
+                if from_tf and os.path.isfile(os.path.join(pretrained_model_name_or_path, TF_WEIGHTS_NAME + ".index")):
                     # Load from a TF 1.0 checkpoint
-                    archive_file = os.path.join(
-                        pretrained_model_name_or_path, TF_WEIGHTS_NAME + ".index"
-                    )
-                elif from_tf and os.path.isfile(
-                    os.path.join(pretrained_model_name_or_path, TF2_WEIGHTS_NAME)
-                ):
+                    archive_file = os.path.join(pretrained_model_name_or_path, TF_WEIGHTS_NAME + ".index")
+                elif from_tf and os.path.isfile(os.path.join(pretrained_model_name_or_path, TF2_WEIGHTS_NAME)):
                     # Load from a TF 2.0 checkpoint
-                    archive_file = os.path.join(
-                        pretrained_model_name_or_path, TF2_WEIGHTS_NAME
-                    )
-                elif os.path.isfile(
-                    os.path.join(pretrained_model_name_or_path, WEIGHTS_NAME)
-                ):
+                    archive_file = os.path.join(pretrained_model_name_or_path, TF2_WEIGHTS_NAME)
+                elif os.path.isfile(os.path.join(pretrained_model_name_or_path, WEIGHTS_NAME)):
                     # Load from a PyTorch checkpoint
-                    archive_file = os.path.join(
-                        pretrained_model_name_or_path, WEIGHTS_NAME
-                    )
+                    archive_file = os.path.join(pretrained_model_name_or_path, WEIGHTS_NAME)
                 else:
                     raise EnvironmentError(
                         "Error no file named {} found in directory {} or `from_tf` set to False".format(
-                            [
-                                WEIGHTS_NAME,
-                                TF2_WEIGHTS_NAME,
-                                TF_WEIGHTS_NAME + ".index",
-                            ],
+                            [WEIGHTS_NAME, TF2_WEIGHTS_NAME, TF_WEIGHTS_NAME + ".index",],
                             pretrained_model_name_or_path,
                         )
                     )
-            elif os.path.isfile(pretrained_model_name_or_path) or is_remote_url(
-                pretrained_model_name_or_path
-            ):
+            elif os.path.isfile(pretrained_model_name_or_path) or is_remote_url(pretrained_model_name_or_path):
                 archive_file = pretrained_model_name_or_path
             elif os.path.isfile(pretrained_model_name_or_path + ".index"):
                 assert (
@@ -710,9 +637,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 )
             except EnvironmentError:
                 if pretrained_model_name_or_path in cls.pretrained_model_archive_map:
-                    msg = "Couldn't reach server at '{}' to download pretrained weights.".format(
-                        archive_file
-                    )
+                    msg = "Couldn't reach server at '{}' to download pretrained weights.".format(archive_file)
                 else:
                     msg = (
                         "Model name '{}' was not found in model name list ({}). "
@@ -729,11 +654,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             if resolved_archive_file == archive_file:
                 logger.info("loading weights file {}".format(archive_file))
             else:
-                logger.info(
-                    "loading weights file {} from cache at {}".format(
-                        archive_file, resolved_archive_file
-                    )
-                )
+                logger.info("loading weights file {} from cache at {}".format(archive_file, resolved_archive_file))
         else:
             resolved_archive_file = None
 
@@ -756,17 +677,13 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         if from_tf:
             if resolved_archive_file.endswith(".index"):
                 # Load from a TensorFlow 1.X checkpoint - provided by original authors
-                model = cls.load_tf_weights(
-                    model, config, resolved_archive_file[:-6]
-                )  # Remove the '.index'
+                model = cls.load_tf_weights(model, config, resolved_archive_file[:-6])  # Remove the '.index'
             else:
                 # Load from our TensorFlow 2.0 checkpoints
                 try:
                     from transformers import load_tf2_checkpoint_in_pytorch_model
 
-                    model = load_tf2_checkpoint_in_pytorch_model(
-                        model, resolved_archive_file, allow_missing_keys=True
-                    )
+                    model = load_tf2_checkpoint_in_pytorch_model(model, resolved_archive_file, allow_missing_keys=True)
                 except ImportError:
                     logger.error(
                         "Loading a TensorFlow model in PyTorch, requires both PyTorch and TensorFlow to be installed. Please see "
@@ -798,17 +715,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # PyTorch's `_load_from_state_dict` does not copy parameters in a module's descendants
             # so we need to apply the function recursively.
             def load(module: nn.Module, prefix=""):
-                local_metadata = (
-                    {} if metadata is None else metadata.get(prefix[:-1], {})
-                )
+                local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
                 module._load_from_state_dict(
-                    state_dict,
-                    prefix,
-                    local_metadata,
-                    True,
-                    missing_keys,
-                    unexpected_keys,
-                    error_msgs,
+                    state_dict, prefix, local_metadata, True, missing_keys, unexpected_keys, error_msgs,
                 )
                 for name, child in module._modules.items():
                     if child is not None:
@@ -817,9 +726,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # Make sure we are able to load base models as well as derived models (with heads)
             start_prefix = ""
             model_to_load = model
-            has_prefix_module = any(
-                s.startswith(cls.base_model_prefix) for s in state_dict.keys()
-            )
+            has_prefix_module = any(s.startswith(cls.base_model_prefix) for s in state_dict.keys())
             if not hasattr(model, cls.base_model_prefix) and has_prefix_module:
                 start_prefix = cls.base_model_prefix + "."
             if hasattr(model, cls.base_model_prefix) and not has_prefix_module:
@@ -830,13 +737,10 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             if model.__class__.__name__ != model_to_load.__class__.__name__:
                 base_model_state_dict = model_to_load.state_dict().keys()
                 head_model_state_dict_without_base_prefix = [
-                    key.split(cls.base_model_prefix + ".")[-1]
-                    for key in model.state_dict().keys()
+                    key.split(cls.base_model_prefix + ".")[-1] for key in model.state_dict().keys()
                 ]
 
-                missing_keys.extend(
-                    head_model_state_dict_without_base_prefix - base_model_state_dict
-                )
+                missing_keys.extend(head_model_state_dict_without_base_prefix - base_model_state_dict)
 
             if len(missing_keys) > 0:
                 logger.info(
@@ -846,9 +750,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 )
             if len(unexpected_keys) > 0:
                 logger.info(
-                    "Weights from pretrained model not used in {}: {}".format(
-                        model.__class__.__name__, unexpected_keys
-                    )
+                    "Weights from pretrained model not used in {}: {}".format(model.__class__.__name__, unexpected_keys)
                 )
             if len(error_msgs) > 0:
                 raise RuntimeError(
@@ -891,9 +793,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             return False
         return True
 
-    def enforce_repetition_penalty_(
-        self, lprobs, batch_size, num_beams, prev_output_tokens, repetition_penalty
-    ):
+    def enforce_repetition_penalty_(self, lprobs, batch_size, num_beams, prev_output_tokens, repetition_penalty):
         """repetition penalty (from CTRL paper https://arxiv.org/abs/1909.05858). """
         for i in range(batch_size * num_beams):
             for previous_token in set(prev_output_tokens[i].tolist()):
@@ -930,6 +830,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         extractive_adjustment: Optional[float] = 0.0,
         return_score: Optional[bool] = False,
         unmasker=None,
+        use_filter=False,
+        print_beam_info=False,
+        abstractive=False,
         **model_specific_kwargs,
     ) -> torch.LongTensor:
         r""" Generates sequences for models with a LM head. The method currently supports greedy decoding, beam-search decoding, sampling with temperature, sampling with top-k or nucleus sampling.
@@ -1064,50 +967,26 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         max_length = max_length if max_length is not None else self.config.max_length
         min_length = min_length if min_length is not None else self.config.min_length
         do_sample = do_sample if do_sample is not None else self.config.do_sample
-        early_stopping = (
-            early_stopping if early_stopping is not None else self.config.early_stopping
-        )
+        early_stopping = early_stopping if early_stopping is not None else self.config.early_stopping
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         num_beams = num_beams if num_beams is not None else self.config.num_beams
-        temperature = (
-            temperature if temperature is not None else self.config.temperature
-        )
+        temperature = temperature if temperature is not None else self.config.temperature
         top_k = top_k if top_k is not None else self.config.top_k
         top_p = top_p if top_p is not None else self.config.top_p
-        repetition_penalty = (
-            repetition_penalty
-            if repetition_penalty is not None
-            else self.config.repetition_penalty
-        )
-        bos_token_id = (
-            bos_token_id if bos_token_id is not None else self.config.bos_token_id
-        )
-        pad_token_id = (
-            pad_token_id if pad_token_id is not None else self.config.pad_token_id
-        )
-        eos_token_id = (
-            eos_token_id if eos_token_id is not None else self.config.eos_token_id
-        )
-        length_penalty = (
-            length_penalty if length_penalty is not None else self.config.length_penalty
-        )
+        repetition_penalty = repetition_penalty if repetition_penalty is not None else self.config.repetition_penalty
+        bos_token_id = bos_token_id if bos_token_id is not None else self.config.bos_token_id
+        pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
+        length_penalty = length_penalty if length_penalty is not None else self.config.length_penalty
         no_repeat_ngram_size = (
-            no_repeat_ngram_size
-            if no_repeat_ngram_size is not None
-            else self.config.no_repeat_ngram_size
+            no_repeat_ngram_size if no_repeat_ngram_size is not None else self.config.no_repeat_ngram_size
         )
-        bad_words_ids = (
-            bad_words_ids if bad_words_ids is not None else self.config.bad_words_ids
-        )
+        bad_words_ids = bad_words_ids if bad_words_ids is not None else self.config.bad_words_ids
         num_return_sequences = (
-            num_return_sequences
-            if num_return_sequences is not None
-            else self.config.num_return_sequences
+            num_return_sequences if num_return_sequences is not None else self.config.num_return_sequences
         )
         decoder_start_token_id = (
-            decoder_start_token_id
-            if decoder_start_token_id is not None
-            else self.config.decoder_start_token_id
+            decoder_start_token_id if decoder_start_token_id is not None else self.config.decoder_start_token_id
         )
 
         if input_ids is not None:
@@ -1115,22 +994,14 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         else:
             batch_size = 1
 
-        assert (
-            isinstance(max_length, int) and max_length > 0
-        ), "`max_length` should be a strictly positive integer."
-        assert (
-            isinstance(min_length, int) and min_length >= 0
-        ), "`min_length` should be a positive integer."
+        assert isinstance(max_length, int) and max_length > 0, "`max_length` should be a strictly positive integer."
+        assert isinstance(min_length, int) and min_length >= 0, "`min_length` should be a positive integer."
         assert isinstance(do_sample, bool), "`do_sample` should be a boolean."
         assert isinstance(early_stopping, bool), "`early_stopping` should be a boolean."
         assert isinstance(use_cache, bool), "`use_cache` should be a boolean."
-        assert (
-            isinstance(num_beams, int) and num_beams > 0
-        ), "`num_beams` should be a strictly positive integer."
+        assert isinstance(num_beams, int) and num_beams > 0, "`num_beams` should be a strictly positive integer."
         assert temperature > 0, "`temperature` should be strictly positive."
-        assert (
-            isinstance(top_k, int) and top_k >= 0
-        ), "`top_k` should be a positive integer."
+        assert isinstance(top_k, int) and top_k >= 0, "`top_k` should be a positive integer."
         assert 0 <= top_p <= 1, "`top_p` should be between 0 and 1."
         assert repetition_penalty >= 1.0, "`repetition_penalty` should be >= 1."
         assert input_ids is not None or (
@@ -1150,9 +1021,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             isinstance(num_return_sequences, int) and num_return_sequences > 0
         ), "`num_return_sequences` should be a strictly positive integer."
         assert (
-            bad_words_ids is None
-            or isinstance(bad_words_ids, list)
-            and isinstance(bad_words_ids[0], list)
+            bad_words_ids is None or isinstance(bad_words_ids, list) and isinstance(bad_words_ids[0], list)
         ), "`bad_words_ids` is either `None` or a list of lists of tokens that should not be generated"
 
         if input_ids is None:
@@ -1161,15 +1030,10 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 "or a `bos_token_id` (integer >= 0) as a first token to start the generation."
             )
             input_ids = torch.full(
-                (batch_size, 1),
-                bos_token_id,
-                dtype=torch.long,
-                device=next(self.parameters()).device,
+                (batch_size, 1), bos_token_id, dtype=torch.long, device=next(self.parameters()).device,
             )
         else:
-            assert (
-                input_ids.dim() == 2
-            ), "Input prompt should be of shape (batch_size, sequence length)."
+            assert input_ids.dim() == 2, "Input prompt should be of shape (batch_size, sequence length)."
 
         # not allow to duplicate outputs when greedy decoding
         if do_sample is False:
@@ -1187,11 +1051,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
         # create attention mask if necessary
         # TODO (PVP): this should later be handled by the forward fn() in each model in the future see PR 3140
-        if (
-            (attention_mask is None)
-            and (pad_token_id is not None)
-            and (pad_token_id in input_ids)
-        ):
+        if (attention_mask is None) and (pad_token_id is not None) and (pad_token_id in input_ids):
             attention_mask = input_ids.ne(pad_token_id).long()
         elif attention_mask is None:
             attention_mask = input_ids.new_ones(input_ids.shape)
@@ -1200,9 +1060,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         # attention_mask is created
         if pad_token_id is None and eos_token_id is not None:
             logger.warning(
-                "Setting `pad_token_id` to {} (first `eos_token_id`) to generate sequence".format(
-                    eos_token_id
-                )
+                "Setting `pad_token_id` to {} (first `eos_token_id`) to generate sequence".format(eos_token_id)
             )
             pad_token_id = eos_token_id
 
@@ -1231,12 +1089,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             assert (
                 decoder_start_token_id is not None
             ), "decoder_start_token_id or bos_token_id has to be defined for encoder-decoder generation"
-            assert hasattr(
-                self, "get_encoder"
-            ), "{} should have a 'get_encoder' function defined".format(self)
-            assert callable(self.get_encoder), "{} should be a method".format(
-                self.get_encoder
-            )
+            assert hasattr(self, "get_encoder"), "{} should have a 'get_encoder' function defined".format(self)
+            assert callable(self.get_encoder), "{} should be a method".format(self.get_encoder)
 
             # get encoder and store encoder outputs
             encoder = self.get_encoder()
@@ -1247,9 +1101,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         # Expand input ids if num_beams > 1 or num_return_sequences > 1
         if num_return_sequences > 1 or num_beams > 1:
             input_ids_len = input_ids.shape[-1]
-            input_ids = input_ids.unsqueeze(1).expand(
-                batch_size, effective_batch_mult * num_beams, input_ids_len
-            )
+            input_ids = input_ids.unsqueeze(1).expand(batch_size, effective_batch_mult * num_beams, input_ids_len)
             attention_mask = attention_mask.unsqueeze(1).expand(
                 batch_size, effective_batch_mult * num_beams, input_ids_len
             )
@@ -1325,6 +1177,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 extractive_adjustment=extractive_adjustment,
                 return_score=return_score,
                 unmasker=unmasker,
+                use_filter=use_filter,
+                print_beam_info=print_beam_info,
+                abstractive=abstractive,
             )
         else:
             output = self._generate_no_beam_search(
@@ -1387,15 +1242,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         past = encoder_outputs  # defined for encoder-decoder models, None for decoder-only models
 
         while cur_len < max_length:
-            # import ipdb
-
-            # ipdb.set_trace()
             model_inputs = self.prepare_inputs_for_generation(
-                input_ids,
-                past=past,
-                attention_mask=attention_mask,
-                use_cache=use_cache,
-                **model_specific_kwargs,
+                input_ids, past=past, attention_mask=attention_mask, use_cache=use_cache, **model_specific_kwargs,
             )
 
             outputs = self(**model_inputs)
@@ -1407,29 +1255,21 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
             # repetition penalty from CTRL paper (https://arxiv.org/abs/1909.05858)
             if repetition_penalty != 1.0:
-                self.enforce_repetition_penalty_(
-                    next_token_logits, batch_size, 1, input_ids, repetition_penalty
-                )
+                self.enforce_repetition_penalty_(next_token_logits, batch_size, 1, input_ids, repetition_penalty)
 
             if no_repeat_ngram_size > 0:
                 # calculate a list of banned tokens to prevent repetitively generating the same ngrams
                 # from fairseq: https://github.com/pytorch/fairseq/blob/a07cb6f40480928c9e0548b737aadd36ee66ac76/fairseq/sequence_generator.py#L345
-                banned_tokens = calc_banned_ngram_tokens(
-                    input_ids, batch_size, no_repeat_ngram_size, cur_len
-                )
+                banned_tokens = calc_banned_ngram_tokens(input_ids, batch_size, no_repeat_ngram_size, cur_len)
                 for batch_idx in range(batch_size):
-                    next_token_logits[batch_idx, banned_tokens[batch_idx]] = -float(
-                        "inf"
-                    )
+                    next_token_logits[batch_idx, banned_tokens[batch_idx]] = -float("inf")
 
             if bad_words_ids is not None:
                 # calculate a list of banned tokens according to bad words
                 banned_tokens = calc_banned_bad_words_ids(input_ids, bad_words_ids)
 
                 for batch_idx in range(batch_size):
-                    next_token_logits[batch_idx, banned_tokens[batch_idx]] = -float(
-                        "inf"
-                    )
+                    next_token_logits[batch_idx, banned_tokens[batch_idx]] = -float("inf")
 
             # set eos token prob to zero if min_length is not reached
             if eos_token_id is not None and cur_len < min_length:
@@ -1440,9 +1280,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 if temperature != 1.0:
                     next_token_logits = next_token_logits / temperature
                 # Top-p/top-k filtering
-                next_token_logits = top_k_top_p_filtering(
-                    next_token_logits, top_k=top_k, top_p=top_p
-                )
+                next_token_logits = top_k_top_p_filtering(next_token_logits, top_k=top_k, top_p=top_p)
                 # Sample
                 probs = F.softmax(next_token_logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
@@ -1453,9 +1291,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # update generations and finished sentences
             if eos_token_id is not None:
                 # pad finished sentences if eos_token_id exist
-                tokens_to_add = next_token * unfinished_sents + (pad_token_id) * (
-                    1 - unfinished_sents
-                )
+                tokens_to_add = next_token * unfinished_sents + (pad_token_id) * (1 - unfinished_sents)
             else:
                 tokens_to_add = next_token
 
@@ -1466,12 +1302,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             if eos_token_id is not None:
                 eos_in_sents = tokens_to_add == eos_token_id
                 # if sentence is unfinished and the token to add is eos, sent_lengths is filled with current length
-                is_sents_unfinished_and_token_to_add_is_eos = unfinished_sents.mul(
-                    eos_in_sents.long()
-                ).bool()
-                sent_lengths.masked_fill_(
-                    is_sents_unfinished_and_token_to_add_is_eos, cur_len
-                )
+                is_sents_unfinished_and_token_to_add_is_eos = unfinished_sents.mul(eos_in_sents.long()).bool()
+                sent_lengths.masked_fill_(is_sents_unfinished_and_token_to_add_is_eos, cur_len)
                 # unfinished_sents is set to zero if eos in sentence
                 unfinished_sents.mul_((~eos_in_sents).long())
 
@@ -1482,22 +1314,14 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # extend attention_mask for new generated input if only decoder
             if self.config.is_encoder_decoder is False:
                 attention_mask = torch.cat(
-                    [
-                        attention_mask,
-                        attention_mask.new_ones((attention_mask.shape[0], 1)),
-                    ],
-                    dim=-1,
+                    [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1)),], dim=-1,
                 )
 
         # if there are different sentences lengths in the batch, some batches have to be padded
         if sent_lengths.min().item() != sent_lengths.max().item():
-            assert (
-                pad_token_id is not None
-            ), "`Pad_token_id` has to be defined if batches have different lengths"
+            assert pad_token_id is not None, "`Pad_token_id` has to be defined if batches have different lengths"
             # finished sents are filled with pad_token
-            decoded = input_ids.new(batch_size, sent_lengths.max().item()).fill_(
-                pad_token_id
-            )
+            decoded = input_ids.new(batch_size, sent_lengths.max().item()).fill_(pad_token_id)
         else:
             decoded = input_ids
 
@@ -1538,6 +1362,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         extractive_adjustment,
         return_score,
         unmasker,
+        use_filter,
+        print_beam_info,
+        abstractive,
     ):
         """ Generate sequences for each example with beam search.
         """
@@ -1550,16 +1377,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
         # generated hypotheses
         generated_hyps = [
-            BeamHypotheses(
-                num_beams, max_length, length_penalty, early_stopping=early_stopping
-            )
+            BeamHypotheses(num_beams, max_length, length_penalty, early_stopping=early_stopping)
             for _ in range(batch_size)
         ]
 
         # scores for each sentence in the beam
-        beam_scores = torch.zeros(
-            (batch_size, num_beams), dtype=torch.float, device=input_ids.device
-        )
+        beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
 
         # for greedy decoding it is made sure that only tokens of the first beam are considered to avoid sampling the exact same tokens three times
         if do_sample is False:
@@ -1577,19 +1400,17 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         next_distribution = torch.zeros((num_beams, 10, 1))
         attribution = np.zeros((num_beams, 5, 2, 1), dtype="O")
 
-        previous_dead_end_tokens = set()
-        use_cache_dead_end = True
         num_resets = 0
         tmp_num_resets = 0
+        dead_end_tokens = [set() for i in range(max_length)]
 
         while cur_len < max_length:
-            # import ipdb; ipdb.set_trace()
             previous_past = copy.deepcopy(past)
             model_inputs = self.prepare_inputs_for_generation(
                 input_ids,
-                past=past if use_cache_dead_end else None,
+                past=past,
                 attention_mask=attention_mask,
-                use_cache=use_cache if use_cache_dead_end else False,
+                use_cache=use_cache,
                 tokenizer=tokenizer,
                 **model_specific_kwargs,
             )
@@ -1609,12 +1430,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     original_input_ids=original_input_ids,
                 )  # (batch_size * num_beams, cur_len, vocab_size)
 
-            import ipdb
-
-            ipdb.set_trace()
-            next_token_logits = outputs[0][
-                :, -1, :
-            ]  # (batch_size * num_beams, vocab_size)
+            next_token_logits = outputs[0][:, -1, :]  # (batch_size * num_beams, vocab_size)
 
             # if model has past, then set the past variable to speed up decoding
             if self._use_cache(outputs, use_cache):
@@ -1623,11 +1439,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # repetition penalty (from CTRL paper https://arxiv.org/abs/1909.05858)
             if repetition_penalty != 1.0:
                 self.enforce_repetition_penalty_(
-                    next_token_logits,
-                    batch_size,
-                    num_beams,
-                    input_ids,
-                    repetition_penalty,
+                    next_token_logits, batch_size, num_beams, input_ids, repetition_penalty,
                 )
 
             if temperature != 1.0:
@@ -1641,18 +1453,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
             # Compute next token entropy and top k
             smed = F.softmax(next_token_logits, dim=-1)
-            next_entropies = [
-                entropy(smed[i, :].detach().cpu()) for i in range(smed.shape[0])
-            ]
+            next_entropies = [entropy(smed[i, :].detach().cpu()) for i in range(smed.shape[0])]
             next_top_k = torch.topk(smed, k=10)[1].cpu()
 
-            next_token_logits[:, source_index_mask] = (
-                next_token_logits[:, source_index_mask] + extractive_adjustment
-            )
+            next_token_logits[:, source_index_mask] = next_token_logits[:, source_index_mask] + extractive_adjustment
 
-            scores = F.log_softmax(
-                next_token_logits, dim=-1
-            )  # (batch_size * num_beams, vocab_size)
+            scores = F.log_softmax(next_token_logits, dim=-1)  # (batch_size * num_beams, vocab_size)
 
             # set eos token prob to zero if min_length is not reached
             if eos_token_id is not None and cur_len < min_length:
@@ -1675,17 +1481,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 for i, banned_tokens in enumerate(banned_tokens):
                     scores[i, banned_tokens] = -float("inf")
 
-            assert scores.shape == (
-                batch_size * num_beams,
-                vocab_size,
-            ), "Shapes of scores: {} != {}".format(
+            assert scores.shape == (batch_size * num_beams, vocab_size,), "Shapes of scores: {} != {}".format(
                 scores.shape, (batch_size * num_beams, vocab_size)
             )
 
             if do_sample:
-                _scores = scores + beam_scores[:, None].expand_as(
-                    scores
-                )  # (batch_size * num_beams, vocab_size)
+                _scores = scores + beam_scores[:, None].expand_as(scores)  # (batch_size * num_beams, vocab_size)
                 # Top-p/top-k filtering
                 _scores = top_k_top_p_filtering(
                     _scores, top_k=top_k, top_p=top_p, min_tokens_to_keep=2
@@ -1704,75 +1505,63 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     probs, num_samples=2 * num_beams, replacement=with_replacement
                 )  # (batch_size, num_beams * 2)
                 # Compute next scores
-                next_scores = torch.gather(
-                    _scores, -1, next_tokens
-                )  # (batch_size, num_beams * 2)
+                next_scores = torch.gather(_scores, -1, next_tokens)  # (batch_size, num_beams * 2)
                 # sort the sampled vector to make sure that the first num_beams samples are the best
-                next_scores, next_scores_indices = torch.sort(
-                    next_scores, descending=True, dim=1
-                )
-                next_tokens = torch.gather(
-                    next_tokens, -1, next_scores_indices
-                )  # (batch_size, num_beams * 2)
+                next_scores, next_scores_indices = torch.sort(next_scores, descending=True, dim=1)
+                next_tokens = torch.gather(next_tokens, -1, next_scores_indices)  # (batch_size, num_beams * 2)
 
             else:
-                next_scores = scores + beam_scores[:, None].expand_as(
-                    scores
-                )  # (batch_size * num_beams, vocab_size)
+                next_scores = scores + beam_scores[:, None].expand_as(scores)  # (batch_size * num_beams, vocab_size)
 
                 # re-organize to group the beam together (we are keeping top hypothesis accross beams)
                 next_scores = next_scores.view(
                     batch_size, num_beams * vocab_size
                 )  # (batch_size, num_beams * vocab_size)
-                import ipdb
 
-                ipdb.set_trace()
                 next_scores, next_tokens = torch.topk(
-                    next_scores,
-                    2 * num_beams + len(previous_dead_end_tokens),
-                    dim=1,
-                    largest=True,
-                    sorted=True,
+                    next_scores, 2 * num_beams + 2 * len(dead_end_tokens[cur_len]), dim=1, largest=True, sorted=True,
                 )
                 next_scores = next_scores.cpu()
                 filter_scores = []
                 participating_beams = set()
-                for i in range(2 * num_beams + len(previous_dead_end_tokens)):
+                for i in range(2 * num_beams + 2 * len(dead_end_tokens[cur_len])):
                     beam_index = next_tokens[0][i] // vocab_size
                     participating_beams.add(beam_index)
 
-                    filter_score = beam_search_token_scorer(
-                        tokenizer.decode(next_tokens[0][i].item() % vocab_size),
-                        tokenizer.decode(input_ids[beam_index][-1].item() % vocab_size)
-                        if input_ids[beam_index].shape[0] > 1
-                        else "",
-                        tokenizer.decode(input_ids[beam_index][-2].item() % vocab_size)
-                        if input_ids[beam_index].shape[0] > 2
-                        else "",
-                        next_entropies[beam_index],
-                        entropies[beam_index, -1]
-                        if entropies[beam_index].shape[0] > 1
-                        else -1,
-                        entropies[beam_index, -2]
-                        if entropies[beam_index].shape[0] > 2
-                        else -1,
-                        [tokenizer.decode(i.item()) for i in next_top_k[beam_index]],
-                        cross_attn_output[beam_index],
-                        "".join(
-                            [tokenizer.decode(i.item()) for i in input_ids[beam_index]]
-                        ),
-                        unmasker,
-                        previous_dead_end_tokens,
-                    )
-                    # filter_score = 1
+                    if use_filter:
+                        filter_score = beam_search_token_scorer(
+                            tokenizer.decode(next_tokens[0][i].item() % vocab_size),
+                            tokenizer.decode(input_ids[beam_index][-1].item() % vocab_size)
+                            if input_ids[beam_index].shape[0] > 1
+                            else "",
+                            tokenizer.decode(input_ids[beam_index][-2].item() % vocab_size)
+                            if input_ids[beam_index].shape[0] > 2
+                            else "",
+                            next_entropies[beam_index],
+                            entropies[beam_index, -1] if entropies[beam_index].shape[0] > 1 else -1,
+                            entropies[beam_index, -2] if entropies[beam_index].shape[0] > 2 else -1,
+                            [tokenizer.decode(i.item()) for i in next_top_k[beam_index]],
+                            cross_attn_output[beam_index],
+                            "".join([tokenizer.decode(i.item()) for i in input_ids[beam_index]]),
+                            unmasker,
+                            dead_end_tokens[cur_len],
+                            abstractive,
+                            self.model,
+                            tokenizer,
+                        )
+                    else:
+                        filter_score = 1
+
                     filter_scores.append(filter_score)
 
-                import ipdb
-
-                ipdb.set_trace()
+                next_scores -= (1 - np.array(filter_scores)) * 10000
+                if print_beam_info:
+                    print(next_scores)
+                    print(tokenizer.decode([t.item() % 50265 for t in next_tokens[0]]))
 
                 if all(f == 0 for f in filter_scores):
-                    print("---------------RESET---------------")
+                    if print_beam_info:
+                        print("---------------RESET---------------")
                     previous_dead_end_tokens = {
                         tokenizer.decode(input_ids[beam_index][-1].item() % vocab_size)
                         for beam_index in participating_beams
@@ -1787,37 +1576,20 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     # entropies = previous_entropies
                     # attribution = previous_attribution
                     cur_len -= 1
+                    dead_end_tokens[cur_len] = dead_end_tokens[cur_len].union(previous_dead_end_tokens)
+
                     past = previous_past
-                    tmp_num_resets += 1
-                    import ipdb
-
-                    ipdb.set_trace()
+                    num_resets += 1
                     continue
-                else:
-                    previous_dead_end_tokens = set()
-                    use_cache_dead_end = True
 
-                next_scores -= (1 - np.array(filter_scores)) * 10000
-                print(next_scores)
-                next_scores, next_scores_indices = next_scores.sort(
-                    dim=1, descending=True
-                )
+                next_scores, next_scores_indices = next_scores.sort(dim=1, descending=True)
                 next_tokens[0] = next_tokens[0, next_scores_indices[0]]
-                next_used_attributions_sorted = []
-                for index in next_scores_indices[0]:
-                    next_used_attributions_sorted.append(next_used_attributions[index])
 
                 next_tokens = next_tokens[:, : 2 * num_beams]
                 next_scores = next_scores[:, : 2 * num_beams]
-                next_used_attributions = next_used_attributions[: 2 * num_beams]
-                # import ipdb
-
-                # ipdb.set_trace()
                 # another place batching is broken
 
-            assert (
-                next_scores.size() == next_tokens.size() == (batch_size, 2 * num_beams)
-            )
+            assert next_scores.size() == next_tokens.size() == (batch_size, 2 * num_beams)
 
             # next batch beam content
             next_batch_beam = []
@@ -1829,30 +1601,19 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 if done[batch_idx]:
                     assert (
                         len(generated_hyps[batch_idx]) >= num_beams
-                    ), "Batch can only be done if at least {} beams have been generated".format(
-                        num_beams
-                    )
+                    ), "Batch can only be done if at least {} beams have been generated".format(num_beams)
                     assert (
                         eos_token_id is not None and pad_token_id is not None
                     ), "generated beams >= num_beams -> eos_token_id and pad_token have to be defined"
-                    next_batch_beam.extend(
-                        [(0, pad_token_id, 0)] * num_beams
-                    )  # pad the batch
+                    next_batch_beam.extend([(0, pad_token_id, 0)] * num_beams)  # pad the batch
                     continue
 
                 # next sentence beam content
                 next_sent_beam = []
 
                 # next tokens for this sentence
-                for (
-                    beam_token_rank,
-                    (beam_token_id, beam_token_score, beam_used_attributions),
-                ) in enumerate(
-                    zip(
-                        next_tokens[batch_idx],
-                        next_scores[batch_idx],
-                        next_used_attributions_sorted,
-                    )
+                for (beam_token_rank, (beam_token_id, beam_token_score),) in enumerate(
+                    zip(next_tokens[batch_idx], next_scores[batch_idx],)
                 ):
                     # get beam and token IDs
                     beam_id = beam_token_id // vocab_size
@@ -1868,16 +1629,15 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                     # add to generated hypotheses if end of sentence or last iteration
                     if (eos_token_id is not None) and (token_id.item() == eos_token_id):
                         # if beam_token does not belong to top num_beams tokens, it should not be added
-                        is_beam_token_worse_than_top_num_beams = (
-                            beam_token_rank >= num_beams
-                        )
+                        is_beam_token_worse_than_top_num_beams = beam_token_rank >= num_beams
                         if is_beam_token_worse_than_top_num_beams:
                             continue
 
                         if self.model.output_attentions:
-                            print(":::::Adding:::::", beam_token_score)
-                            num_resets += tmp_num_resets
-                            tmp_num_resets = 0
+                            if print_beam_info:
+                                print(":::::Adding:::::", beam_token_score)
+                            # num_resets += tmp_num_resets
+                            # tmp_num_resets = 0
                             generated_hyps[batch_idx].add(
                                 input_ids[effective_beam_id].clone(),
                                 beam_token_score.item(),
@@ -1905,19 +1665,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                                     next_entropy,
                                     next_distro,
                                     next_attribution,
-                                    beam_used_attributions,
                                 )
                             )
                         else:
-                            # i think this code path is broken
+                            # TODO i think this code path is broken
                             next_sent_beam.append(
-                                (
-                                    beam_token_score,
-                                    token_id,
-                                    effective_beam_id,
-                                    next_entropy,
-                                    next_distro,
-                                )
+                                (beam_token_score, token_id, effective_beam_id, next_entropy, next_distro,)
                             )
 
                     # the beam for next step is full
@@ -1938,10 +1691,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             if all(done):
                 break
 
-            # import ipdb
-
-            # ipdb.set_trace()
-
             # save previous state
             previous_next_distribution = copy.deepcopy(next_distribution)
             previous_entropies = copy.deepcopy(entropies)
@@ -1959,52 +1708,27 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             other_tokens = torch.IntTensor([x[4].tolist() for x in next_batch_beam])
 
             next_distribution = next_distribution[beam_idx, :]
-            next_distribution = torch.cat(
-                [next_distribution, other_tokens.unsqueeze(2).float()], dim=-1
-            )
+            next_distribution = torch.cat([next_distribution, other_tokens.unsqueeze(2).float()], dim=-1)
 
             entropies = entropies[beam_idx, :]
-            entropies = torch.cat(
-                [entropies, beam_entropies.unsqueeze(1).float()], dim=-1
-            )
-
-            # import ipdb
-
-            # ipdb.set_trace()
-            previously_used_attributions_tmp = [set()] * num_beams
-            for new_idx, old_idx in enumerate(beam_idx):
-                previously_used_attributions_tmp[
-                    new_idx
-                ] = previously_used_attributions[old_idx.item()].union(
-                    next_batch_beam[new_idx][6]
-                )
-            previously_used_attributions = copy.deepcopy(
-                previously_used_attributions_tmp
-            )
-
-            # import ipdb
-
-            # ipdb.set_trace()
+            entropies = torch.cat([entropies, beam_entropies.unsqueeze(1).float()], dim=-1)
 
             if self.model.output_attentions:
                 beam_attribution = np.array(
-                    [
-                        [(score.item(), string) for score, string in x[5]]
-                        for x in next_batch_beam
-                    ]
+                    [[(score.item(), string) for score, string in x[5]] for x in next_batch_beam]
                 )
                 attribution = attribution[beam_idx.cpu(), :]
-                attribution = np.concatenate(
-                    [attribution, np.expand_dims(beam_attribution, axis=3)], axis=-1
-                )
+                attribution = np.concatenate([attribution, np.expand_dims(beam_attribution, axis=3)], axis=-1)
 
             # re-order batch and update current length
             input_ids = input_ids[beam_idx, :]
             input_ids = torch.cat([input_ids, beam_tokens.unsqueeze(1)], dim=-1)
             cur_len = cur_len + 1
 
-            for beam in range(input_ids.shape[0]):
-                print(f"Beam {beam}:", tokenizer.decode(input_ids[beam]))
+            if print_beam_info:
+                for beam in range(input_ids.shape[0]):
+                    print(f"Beam {beam}:", tokenizer.decode(input_ids[beam]))
+                    print(beam_scores[beam])
 
             # re-order internal states
             if past is not None:
@@ -2013,16 +1737,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
             # extend attention_mask for new generated input if only decoder
             if self.config.is_encoder_decoder is False:
                 attention_mask = torch.cat(
-                    [
-                        attention_mask,
-                        attention_mask.new_ones((attention_mask.shape[0], 1)),
-                    ],
-                    dim=-1,
+                    [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1)),], dim=-1,
                 )
 
-        # import ipdb
-
-        # ipdb.set_trace()
         # finalize all open beam hypotheses and end to generated hypotheses
         for batch_idx in range(batch_size):
             if done[batch_idx]:
@@ -2030,15 +1747,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
             # test that beam scores match previously calculated scores if not eos and batch_idx not done
             if eos_token_id is not None and all(
-                (token_id % vocab_size).item() is not eos_token_id
-                for token_id in next_tokens[batch_idx]
+                (token_id % vocab_size).item() is not eos_token_id for token_id in next_tokens[batch_idx]
             ):
                 assert torch.all(
-                    next_scores[batch_idx, :num_beams]
-                    == beam_scores.view(batch_size, num_beams)[batch_idx]
+                    next_scores[batch_idx, :num_beams] == beam_scores.view(batch_size, num_beams)[batch_idx]
                 ), "If batch_idx is not done, final next scores: {} have to equal to accumulated beam_scores: {}".format(
-                    next_scores[:, :num_beams][batch_idx],
-                    beam_scores.view(batch_size, num_beams)[batch_idx],
+                    next_scores[:, :num_beams][batch_idx], beam_scores.view(batch_size, num_beams)[batch_idx],
                 )
 
             # need to add best num_beams hypotheses to generated hyps
@@ -2049,9 +1763,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 generated_hyps[batch_idx].add(final_tokens, final_score)
 
         # depending on whether greedy generation is wanted or not define different output_batch_size and output_num_return_sequences_per_batch
-        output_batch_size = (
-            batch_size if do_sample else batch_size * num_return_sequences
-        )
+        output_batch_size = batch_size if do_sample else batch_size * num_return_sequences
         output_num_return_sequences_per_batch = 1 if do_sample else num_return_sequences
 
         # select the best hypotheses
@@ -2084,9 +1796,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                                 float(best_full[4][top_index, 0, sequence_index]),
                                 best_full[4][top_index, 1, sequence_index],
                             )
-                            for top_index in range(
-                                best_full[4][:, :, sequence_index].shape[0]
-                            )
+                            for top_index in range(best_full[4][:, :, sequence_index].shape[0])
                         ]
                         for sequence_index in range(best_full[4].shape[2])
                     ]
@@ -2106,9 +1816,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         else:
             # none of the hypotheses have an eos_token
             assert (len(hypo) == max_length for hypo in best)
-            decoded = (
-                torch.stack(best).type(torch.long).to(next(self.parameters()).device)
-            )
+            decoded = torch.stack(best).type(torch.long).to(next(self.parameters()).device)
 
         distribution_output = [
             [
@@ -2127,7 +1835,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 distribution_output,
                 attribution_to_return,
                 best_scores[0],
-                num_resets_to_return,
+                [num_resets],
             )
         else:
             return (decoded, best_scores[0])
@@ -2137,9 +1845,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         return tuple(layer_past.index_select(1, beam_idx) for layer_past in past)
 
 
-def calc_banned_ngram_tokens(
-    prev_input_ids: Tensor, num_hypos: int, no_repeat_ngram_size: int, cur_len: int
-) -> None:
+def calc_banned_ngram_tokens(prev_input_ids: Tensor, num_hypos: int, no_repeat_ngram_size: int, cur_len: int) -> None:
     """Copied from fairseq for no_repeat_ngram in beam_search"""
     if cur_len + 1 < no_repeat_ngram_size:
         # return no banned tokens if we haven't generated no_repeat_ngram_size tokens yet
@@ -2150,9 +1856,7 @@ def calc_banned_ngram_tokens(
         generated_ngram = generated_ngrams[idx]
         for ngram in zip(*[gen_tokens[i:] for i in range(no_repeat_ngram_size)]):
             prev_ngram_tuple = tuple(ngram[:-1])
-            generated_ngram[prev_ngram_tuple] = generated_ngram.get(
-                prev_ngram_tuple, []
-            ) + [ngram[-1]]
+            generated_ngram[prev_ngram_tuple] = generated_ngram.get(prev_ngram_tuple, []) + [ngram[-1]]
 
     def _get_generated_ngrams(hypo_idx):
         # Before decoding the next token, prevent decoding of ngrams that have already appeared
@@ -2164,9 +1868,7 @@ def calc_banned_ngram_tokens(
     return banned_tokens
 
 
-def calc_banned_bad_words_ids(
-    prev_input_ids: Iterable[int], bad_words_ids: Iterable[int]
-) -> Iterable[int]:
+def calc_banned_bad_words_ids(prev_input_ids: Iterable[int], bad_words_ids: Iterable[int]) -> Iterable[int]:
     banned_tokens = []
 
     def _tokens_match(prev_tokens, tokens):
@@ -2187,16 +1889,11 @@ def calc_banned_bad_words_ids(
         banned_tokens_slice = []
 
         for banned_token_seq in bad_words_ids:
-            assert (
-                len(banned_token_seq) > 0
-            ), "Banned words token sequences {} cannot have an empty list".format(
+            assert len(banned_token_seq) > 0, "Banned words token sequences {} cannot have an empty list".format(
                 bad_words_ids
             )
 
-            if (
-                _tokens_match(prev_input_ids_slice.tolist(), banned_token_seq[:-1])
-                is False
-            ):
+            if _tokens_match(prev_input_ids_slice.tolist(), banned_token_seq[:-1]) is False:
                 # if tokens do not match continue
                 continue
 
@@ -2243,9 +1940,7 @@ def top_k_top_p_filtering(
         sorted_indices_to_remove[..., 0] = 0
 
         # scatter sorted tensors to original indexing
-        indices_to_remove = sorted_indices_to_remove.scatter(
-            1, sorted_indices, sorted_indices_to_remove
-        )
+        indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
         logits[indices_to_remove] = filter_value
     return logits
 
@@ -2268,9 +1963,7 @@ class BeamHypotheses(object):
         """
         return len(self.beams)
 
-    def add(
-        self, hyp, sum_logprobs, entropies, distribution, attribution=[], num_resets=0
-    ):
+    def add(self, hyp, sum_logprobs, entropies, distribution, attribution=[], num_resets=0):
         """
         Add a new hypothesis to the list.
         """
@@ -2279,13 +1972,9 @@ class BeamHypotheses(object):
         # need to calculate an additional score here and combine it with the log probs somehow
         score = log_probs_score
         if len(self) < self.num_beams or score > self.worst_score:
-            self.beams.append(
-                (score, hyp, entropies, distribution, attribution, num_resets)
-            )
+            self.beams.append((score, hyp, entropies, distribution, attribution, num_resets))
             if len(self) > self.num_beams:
-                sorted_scores = sorted(
-                    [(s, idx) for idx, (s, _, _, _, _, _) in enumerate(self.beams)]
-                )
+                sorted_scores = sorted([(s, idx) for idx, (s, _, _, _, _, _) in enumerate(self.beams)])
                 del self.beams[sorted_scores[0][1]]
                 self.worst_score = sorted_scores[1][0]
             else:
@@ -2363,9 +2052,7 @@ class PoolerEndLogits(nn.Module):
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dense_1 = nn.Linear(config.hidden_size, 1)
 
-    def forward(
-        self, hidden_states, start_states=None, start_positions=None, p_mask=None
-    ):
+    def forward(self, hidden_states, start_states=None, start_positions=None, p_mask=None):
         """ Args:
             One of ``start_states``, ``start_positions`` should be not None.
             If both are set, ``start_positions`` overrides ``start_states``.
@@ -2383,12 +2070,8 @@ class PoolerEndLogits(nn.Module):
         ), "One of start_states, start_positions should be not None"
         if start_positions is not None:
             slen, hsz = hidden_states.shape[-2:]
-            start_positions = start_positions[:, None, None].expand(
-                -1, -1, hsz
-            )  # shape (bsz, 1, hsz)
-            start_states = hidden_states.gather(
-                -2, start_positions
-            )  # shape (bsz, 1, hsz)
+            start_positions = start_positions[:, None, None].expand(-1, -1, hsz)  # shape (bsz, 1, hsz)
+            start_states = hidden_states.gather(-2, start_positions)  # shape (bsz, 1, hsz)
             start_states = start_states.expand(-1, slen, -1)  # shape (bsz, slen, hsz)
 
         x = self.dense_0(torch.cat([hidden_states, start_states], dim=-1))
@@ -2414,9 +2097,7 @@ class PoolerAnswerClass(nn.Module):
         self.activation = nn.Tanh()
         self.dense_1 = nn.Linear(config.hidden_size, 1, bias=False)
 
-    def forward(
-        self, hidden_states, start_states=None, start_positions=None, cls_index=None
-    ):
+    def forward(self, hidden_states, start_states=None, start_positions=None, cls_index=None):
         """
         Args:
             One of ``start_states``, ``start_positions`` should be not None.
@@ -2438,20 +2119,12 @@ class PoolerAnswerClass(nn.Module):
             start_states is not None or start_positions is not None
         ), "One of start_states, start_positions should be not None"
         if start_positions is not None:
-            start_positions = start_positions[:, None, None].expand(
-                -1, -1, hsz
-            )  # shape (bsz, 1, hsz)
-            start_states = hidden_states.gather(-2, start_positions).squeeze(
-                -2
-            )  # shape (bsz, hsz)
+            start_positions = start_positions[:, None, None].expand(-1, -1, hsz)  # shape (bsz, 1, hsz)
+            start_states = hidden_states.gather(-2, start_positions).squeeze(-2)  # shape (bsz, hsz)
 
         if cls_index is not None:
-            cls_index = cls_index[:, None, None].expand(
-                -1, -1, hsz
-            )  # shape (bsz, 1, hsz)
-            cls_token_state = hidden_states.gather(-2, cls_index).squeeze(
-                -2
-            )  # shape (bsz, hsz)
+            cls_index = cls_index[:, None, None].expand(-1, -1, hsz)  # shape (bsz, 1, hsz)
+            cls_token_state = hidden_states.gather(-2, cls_index).squeeze(-2)  # shape (bsz, hsz)
         else:
             cls_token_state = hidden_states[:, -1, :]  # shape (bsz, hsz)
 
@@ -2513,13 +2186,7 @@ class SQuADHead(nn.Module):
         self.answer_class = PoolerAnswerClass(config)
 
     def forward(
-        self,
-        hidden_states,
-        start_positions=None,
-        end_positions=None,
-        cls_index=None,
-        is_impossible=None,
-        p_mask=None,
+        self, hidden_states, start_positions=None, end_positions=None, cls_index=None, is_impossible=None, p_mask=None,
     ):
         outputs = ()
 
@@ -2532,9 +2199,7 @@ class SQuADHead(nn.Module):
                     x.squeeze_(-1)
 
             # during training, compute the end logits based on the ground truth of the start position
-            end_logits = self.end_logits(
-                hidden_states, start_positions=start_positions, p_mask=p_mask
-            )
+            end_logits = self.end_logits(hidden_states, start_positions=start_positions, p_mask=p_mask)
 
             loss_fct = CrossEntropyLoss()
             start_loss = loss_fct(start_logits, start_positions)
@@ -2543,9 +2208,7 @@ class SQuADHead(nn.Module):
 
             if cls_index is not None and is_impossible is not None:
                 # Predict answerability from the representation of CLS and START
-                cls_logits = self.answer_class(
-                    hidden_states, start_positions=start_positions, cls_index=cls_index
-                )
+                cls_logits = self.answer_class(hidden_states, start_positions=start_positions, cls_index=cls_index)
                 loss_fct_cls = nn.BCEWithLogitsLoss()
                 cls_loss = loss_fct_cls(cls_logits, is_impossible)
 
@@ -2562,47 +2225,27 @@ class SQuADHead(nn.Module):
             start_top_log_probs, start_top_index = torch.topk(
                 start_log_probs, self.start_n_top, dim=-1
             )  # shape (bsz, start_n_top)
-            start_top_index_exp = start_top_index.unsqueeze(-1).expand(
-                -1, -1, hsz
-            )  # shape (bsz, start_n_top, hsz)
-            start_states = torch.gather(
-                hidden_states, -2, start_top_index_exp
-            )  # shape (bsz, start_n_top, hsz)
-            start_states = start_states.unsqueeze(1).expand(
-                -1, slen, -1, -1
-            )  # shape (bsz, slen, start_n_top, hsz)
+            start_top_index_exp = start_top_index.unsqueeze(-1).expand(-1, -1, hsz)  # shape (bsz, start_n_top, hsz)
+            start_states = torch.gather(hidden_states, -2, start_top_index_exp)  # shape (bsz, start_n_top, hsz)
+            start_states = start_states.unsqueeze(1).expand(-1, slen, -1, -1)  # shape (bsz, slen, start_n_top, hsz)
 
             hidden_states_expanded = hidden_states.unsqueeze(2).expand_as(
                 start_states
             )  # shape (bsz, slen, start_n_top, hsz)
             p_mask = p_mask.unsqueeze(-1) if p_mask is not None else None
-            end_logits = self.end_logits(
-                hidden_states_expanded, start_states=start_states, p_mask=p_mask
-            )
-            end_log_probs = F.softmax(
-                end_logits, dim=1
-            )  # shape (bsz, slen, start_n_top)
+            end_logits = self.end_logits(hidden_states_expanded, start_states=start_states, p_mask=p_mask)
+            end_log_probs = F.softmax(end_logits, dim=1)  # shape (bsz, slen, start_n_top)
 
             end_top_log_probs, end_top_index = torch.topk(
                 end_log_probs, self.end_n_top, dim=1
             )  # shape (bsz, end_n_top, start_n_top)
-            end_top_log_probs = end_top_log_probs.view(
-                -1, self.start_n_top * self.end_n_top
-            )
+            end_top_log_probs = end_top_log_probs.view(-1, self.start_n_top * self.end_n_top)
             end_top_index = end_top_index.view(-1, self.start_n_top * self.end_n_top)
 
             start_states = torch.einsum("blh,bl->bh", hidden_states, start_log_probs)
-            cls_logits = self.answer_class(
-                hidden_states, start_states=start_states, cls_index=cls_index
-            )
+            cls_logits = self.answer_class(hidden_states, start_states=start_states, cls_index=cls_index)
 
-            outputs = (
-                start_top_log_probs,
-                start_top_index,
-                end_top_log_probs,
-                end_top_index,
-                cls_logits,
-            ) + outputs
+            outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits,) + outputs
 
         # return start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits
         # or (if labels are provided) (total_loss,)
@@ -2637,26 +2280,17 @@ class SequenceSummary(nn.Module):
 
         self.summary = Identity()
         if hasattr(config, "summary_use_proj") and config.summary_use_proj:
-            if (
-                hasattr(config, "summary_proj_to_labels")
-                and config.summary_proj_to_labels
-                and config.num_labels > 0
-            ):
+            if hasattr(config, "summary_proj_to_labels") and config.summary_proj_to_labels and config.num_labels > 0:
                 num_classes = config.num_labels
             else:
                 num_classes = config.hidden_size
             self.summary = nn.Linear(config.hidden_size, num_classes)
 
         activation_string = getattr(config, "summary_activation", None)
-        self.activation: Callable = (
-            get_activation(activation_string) if activation_string else Identity()
-        )
+        self.activation: Callable = (get_activation(activation_string) if activation_string else Identity())
 
         self.first_dropout = Identity()
-        if (
-            hasattr(config, "summary_first_dropout")
-            and config.summary_first_dropout > 0
-        ):
+        if hasattr(config, "summary_first_dropout") and config.summary_first_dropout > 0:
             self.first_dropout = nn.Dropout(config.summary_first_dropout)
 
         self.last_dropout = Identity()
@@ -2678,20 +2312,12 @@ class SequenceSummary(nn.Module):
             output = hidden_states.mean(dim=1)
         elif self.summary_type == "cls_index":
             if cls_index is None:
-                cls_index = torch.full_like(
-                    hidden_states[..., :1, :],
-                    hidden_states.shape[-2] - 1,
-                    dtype=torch.long,
-                )
+                cls_index = torch.full_like(hidden_states[..., :1, :], hidden_states.shape[-2] - 1, dtype=torch.long,)
             else:
                 cls_index = cls_index.unsqueeze(-1).unsqueeze(-1)
-                cls_index = cls_index.expand(
-                    (-1,) * (cls_index.dim() - 1) + (hidden_states.size(-1),)
-                )
+                cls_index = cls_index.expand((-1,) * (cls_index.dim() - 1) + (hidden_states.size(-1),))
             # shape of cls_index: (bsz, XX, 1, hidden_size) where XX are optional leading dim of hidden_states
-            output = hidden_states.gather(-2, cls_index).squeeze(
-                -2
-            )  # shape (bsz, XX, hidden_size)
+            output = hidden_states.gather(-2, cls_index).squeeze(-2)  # shape (bsz, XX, hidden_size)
         elif self.summary_type == "attn":
             raise NotImplementedError
 
@@ -2731,9 +2357,7 @@ def prune_linear_layer(layer, index, dim=0):
             b = layer.bias[index].clone().detach()
     new_size = list(layer.weight.size())
     new_size[dim] = len(index)
-    new_layer = nn.Linear(new_size[1], new_size[0], bias=layer.bias is not None).to(
-        layer.weight.device
-    )
+    new_layer = nn.Linear(new_size[1], new_size[0], bias=layer.bias is not None).to(layer.weight.device)
     new_layer.weight.requires_grad = False
     new_layer.weight.copy_(W.contiguous())
     new_layer.weight.requires_grad = True
@@ -2782,10 +2406,7 @@ def prune_layer(layer, index, dim=None):
 
 
 def apply_chunking_to_forward(
-    chunk_size: int,
-    chunk_dim: int,
-    forward_fn: Callable[..., torch.Tensor],
-    *input_tensors,
+    chunk_size: int, chunk_dim: int, forward_fn: Callable[..., torch.Tensor], *input_tensors,
 ) -> torch.Tensor:
     """
     This function chunks the `input_tensors` into smaller input tensor parts of size `chunk_size` over the dimension `chunk_dim`.
@@ -2814,9 +2435,7 @@ def apply_chunking_to_forward(
             return apply_chunking_to_forward(self.chunk_size_lm_head, self.seq_len_dim, self.forward_chunk, hidden_states)
     """
 
-    assert len(input_tensors) > 0, "{} has to be a tuple/list of tensors".format(
-        input_tensors
-    )
+    assert len(input_tensors) > 0, "{} has to be a tuple/list of tensors".format(input_tensors)
     tensor_shape = input_tensors[0].shape
     assert all(
         input_tensor.shape == tensor_shape for input_tensor in input_tensors
@@ -2840,15 +2459,9 @@ def apply_chunking_to_forward(
         num_chunks = input_tensors[0].shape[chunk_dim] // chunk_size
 
         # chunk input tensor into tuples
-        input_tensors_chunks = tuple(
-            input_tensor.chunk(num_chunks, dim=chunk_dim)
-            for input_tensor in input_tensors
-        )
+        input_tensors_chunks = tuple(input_tensor.chunk(num_chunks, dim=chunk_dim) for input_tensor in input_tensors)
         # apply forward fn to every tuple
-        output_chunks = tuple(
-            forward_fn(*input_tensors_chunk)
-            for input_tensors_chunk in zip(*input_tensors_chunks)
-        )
+        output_chunks = tuple(forward_fn(*input_tensors_chunk) for input_tensors_chunk in zip(*input_tensors_chunks))
         # concatenate output at same dimension
         return torch.cat(output_chunks, dim=chunk_dim)
 
