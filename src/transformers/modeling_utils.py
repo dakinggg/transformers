@@ -1403,6 +1403,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
         num_resets = 0
         tmp_num_resets = 0
         dead_end_tokens = [set() for i in range(max_length)]
+        replacement_dictionary = {}
 
         while cur_len < max_length:
             previous_past = copy.deepcopy(past)
@@ -1549,6 +1550,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                             self.model,
                             tokenizer,
                         )
+                        if filter_score == "Mr":
+                            filter_score = 1
+                            replacement_dictionary[next_tokens[0][i].item() % vocab_size] = 427
+                        if filter_score == "Ms":
+                            filter_score = 1
+                            replacement_dictionary[next_tokens[0][i].item() % vocab_size] = 2135
                     else:
                         filter_score = 1
 
@@ -1558,6 +1565,10 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 if print_beam_info:
                     print(next_scores)
                     print(tokenizer.decode([t.item() % 50265 for t in next_tokens[0]]))
+
+                # import ipdb
+
+                # ipdb.set_trace()
 
                 if all(f == 0 for f in filter_scores):
                     if print_beam_info:
@@ -1580,6 +1591,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
 
                     past = previous_past
                     num_resets += 1
+
+                    if num_resets > 15:
+                        return None
                     continue
 
                 next_scores, next_scores_indices = next_scores.sort(dim=1, descending=True)
@@ -1783,6 +1797,25 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin):
                 best_full = sorted_hyps.pop()
                 best_hyp = best_full[1]
                 sent_lengths[effective_batch_idx] = len(best_hyp)
+
+                inside_replacement = False
+                best_hyp_list = []
+                for token_value in best_hyp:
+                    token_value = token_value.item()
+                    if inside_replacement:
+                        if tokenizer.decode(token_value).startswith(" "):
+                            inside_replacement = False
+                            best_hyp_list.append(token_value)
+                        else:
+                            best_hyp_list.append(1437)
+                    elif token_value in replacement_dictionary:
+                        best_hyp_list.append(replacement_dictionary[token_value])
+                        inside_replacement = True
+                    else:
+                        best_hyp_list.append(token_value)
+
+                best_hyp = torch.IntTensor(best_hyp_list)
+
                 best.append(best_hyp)
                 best_scores.append(best_full[0])
                 entropies_to_return.append(best_full[2])
