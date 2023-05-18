@@ -39,7 +39,7 @@ from .file_utils import (
     is_remote_url,
 )
 
-from topic_description.summarization.heuristic import beam_search_token_scorer
+from pinocchio.heuristic import beam_search_token_scorer
 
 logger = logging.getLogger(__name__)
 
