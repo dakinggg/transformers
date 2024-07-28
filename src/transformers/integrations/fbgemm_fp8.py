@@ -22,8 +22,8 @@ if is_torch_available():
 if is_accelerate_available():
     from accelerate import init_empty_weights
 
-if is_fbgemm_gpu_available():
-    import fbgemm_gpu.experimental.gen_ai  # noqa: F401
+# if is_fbgemm_gpu_available():
+#     import fbgemm_gpu.experimental.gen_ai  # noqa: F401
 
 logger = logging.get_logger(__name__)
 

@@ -53,26 +53,26 @@ class FbgemmFp8HfQuantizer(HfQuantizer):
                 "Using fbgemm fp8 quantization requires torch > 2.1.0"
                 "Please install the latest version of torch ( pip install --upgrade torch )"
             )
-        if not is_fbgemm_gpu_available():
-            raise ImportError(
-                "Using fbgemm fp8 quantization requires fbgemm-gpu library"
-                "Please install the latest version of fbgemm-gpu library by following : https://pytorch.org/FBGEMM/fbgemm_gpu-development/InstallationInstructions.html#fbgemm-gpu-install-libraries"
-            )
+        # if not is_fbgemm_gpu_available():
+        #     raise ImportError(
+        #         "Using fbgemm fp8 quantization requires fbgemm-gpu library"
+        #         "Please install the latest version of fbgemm-gpu library by following : https://pytorch.org/FBGEMM/fbgemm_gpu-development/InstallationInstructions.html#fbgemm-gpu-install-libraries"
+        #     )
 
         if not is_accelerate_available("0.32.2"):
             raise ImportError(
                 "Loading an FP8 quantized model requires accelerate > 0.32.1 (`pip install --upgrade accelerate`)"
             )
 
-        if not torch.cuda.is_available():
-            raise RuntimeError("Using FP8 quantized models with fbgemm kernels requires a GPU")
+        # if not torch.cuda.is_available():
+        #     raise RuntimeError("Using FP8 quantized models with fbgemm kernels requires a GPU")
 
-        compute_capability = torch.cuda.get_device_capability()
-        major, minor = compute_capability
-        if major < 9:
-            raise ValueError(
-                "FP8 quantized models is only supported on GPUs with compute capability >= 9.0 (e.g H100)"
-            )
+        # compute_capability = torch.cuda.get_device_capability()
+        # major, minor = compute_capability
+        # if major < 9:
+        #     raise ValueError(
+        #         "FP8 quantized models is only supported on GPUs with compute capability >= 9.0 (e.g H100)"
+        #     )
 
         device_map = kwargs.get("device_map", None)
         if device_map is None:
