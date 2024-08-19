@@ -423,9 +423,14 @@ class LlamaAttention(nn.Module):
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
 
+        print("-"*30)
+        print(attention_mask.shape)
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+            print(causal_mask.shape, key_states.shape)
+            print(attn_weights.shape)
             attn_weights = attn_weights + causal_mask
+        print("-"*30)
 
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
