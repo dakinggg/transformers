@@ -1035,14 +1035,18 @@ class Llama4ForCausalLM(Llama4PreTrainedModel, GenerationMixin):
             cache_position=cache_position,
             **kwargs,
         )
+        print(outputs)
 
         hidden_states = outputs[0]
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
+        print(logits)
         loss = None
         if labels is not None:
+            print(labels)
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            print(loss)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
